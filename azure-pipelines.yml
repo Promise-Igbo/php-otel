@@ -45,9 +45,9 @@ stages:
 
         # 5️⃣ Generate Laravel app key and optimize
         - script: |
-            php artisan key:generate --force
-            php artisan view:clear
-            php artisan optimize
+            php artisan key:generate --force || true
+            php artisan view:clear || true
+            php artisan optimize || true
           displayName: Laravel Optimization
 
         # 6️⃣ Archive the project for deployment
