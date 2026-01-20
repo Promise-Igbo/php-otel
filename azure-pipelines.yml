@@ -4,10 +4,10 @@ trigger:
       - main
 
 variables:
-  azureSubscription: 'managedservice'
-  appName: 'laravel-new'
-  phpVersion: '8.2'
-  artifactName: 'drop'
+  azureSubscription: 'managedservice'       # Your Azure service connection
+  appName: 'laravel-new'                    # Azure App Service name
+  phpVersion: '8.2'                         # PHP version
+  artifactName: 'drop'                      
 
 stages:
 # ========================
@@ -21,23 +21,36 @@ stages:
         vmImage: ubuntu-latest
 
       steps:
+        # 1️⃣ Checkout code
         - checkout: self
 
-        - task: UsePhpVersion@0
-          inputs:
-            versionSpec: '$(phpVersion)'
-
+        # 2️⃣ Install PHP 8.2 and required extensions
         - script: |
+            sudo apt update
+            sudo apt install php8.2 php8.2-cli php8.2-mbstring php8.2-xml php8.2-curl unzip -y
             php -v
+          displayName: Install PHP 8.2
+
+        # 3️⃣ Install Composer dependencies
+        - script: |
             composer install --no-dev --prefer-dist --optimize-autoloader
           displayName: Install Composer Dependencies
 
+        # 4️⃣ Create .env if missing
+        - script: |
+            if [ ! -f .env ]; then
+              cp .env.example .env
+            fi
+          displayName: Ensure .env Exists
+
+        # 5️⃣ Generate Laravel app key and optimize
         - script: |
             php artisan key:generate --force
             php artisan view:clear
             php artisan optimize
           displayName: Laravel Optimization
 
+        # 6️⃣ Archive the project for deployment
         - task: ArchiveFiles@2
           inputs:
             rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
@@ -46,6 +59,7 @@ stages:
             archiveFile: '$(Build.ArtifactStagingDirectory)/$(artifactName).zip'
             replaceExistingArchive: true
 
+        # 7️⃣ Publish artifact to pipeline
         - publish: '$(Build.ArtifactStagingDirectory)'
           artifact: $(artifactName)
 
@@ -65,13 +79,15 @@ stages:
         runOnce:
           deploy:
             steps:
+              # 1️⃣ Download the build artifact
               - download: current
                 artifact: $(artifactName)
 
+              # 2️⃣ Deploy to Azure App Service (Linux)
               - task: AzureWebApp@1
                 displayName: Deploy to App Service
                 inputs:
-                  azureSubscription: 'managedservice'
+                  azureSubscription: '$(azureSubscription)'
                   appType: webAppLinux
-                  appName: laravel-new
+                  appName: '$(appName)'
                   package: '$(Pipeline.Workspace)/$(artifactName)/$(artifactName).zip'
