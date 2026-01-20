@@ -1,0 +1,77 @@
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  azureSubscription: 'managedservice'
+  appName: 'laravel-new'
+  phpVersion: '8.2'
+  artifactName: 'drop'
+
+stages:
+# ========================
+# BUILD STAGE
+# ========================
+- stage: Build
+  displayName: Build Laravel App
+  jobs:
+    - job: Build
+      pool:
+        vmImage: ubuntu-latest
+
+      steps:
+        - checkout: self
+
+        - task: UsePhpVersion@0
+          inputs:
+            versionSpec: '$(phpVersion)'
+
+        - script: |
+            php -v
+            composer install --no-dev --prefer-dist --optimize-autoloader
+          displayName: Install Composer Dependencies
+
+        - script: |
+            php artisan key:generate --force
+            php artisan view:clear
+            php artisan optimize
+          displayName: Laravel Optimization
+
+        - task: ArchiveFiles@2
+          inputs:
+            rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+            includeRootFolder: false
+            archiveType: zip
+            archiveFile: '$(Build.ArtifactStagingDirectory)/$(artifactName).zip'
+            replaceExistingArchive: true
+
+        - publish: '$(Build.ArtifactStagingDirectory)'
+          artifact: $(artifactName)
+
+# ========================
+# DEPLOY STAGE
+# ========================
+- stage: Deploy
+  displayName: Deploy to Azure App Service
+  dependsOn: Build
+  jobs:
+    - deployment: Deploy
+      environment: production
+      pool:
+        vmImage: ubuntu-latest
+
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - download: current
+                artifact: $(artifactName)
+
+              - task: AzureWebApp@1
+                displayName: Deploy to App Service
+                inputs:
+                  azureSubscription: 'managedservice'
+                  appType: webAppLinux
+                  appName: laravel-new
+                  package: '$(Pipeline.Workspace)/$(artifactName)/$(artifactName).zip'
