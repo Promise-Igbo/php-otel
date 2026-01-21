@@ -3,75 +3,51 @@ trigger:
     include:
       - main
 
-pr: none
-
 pool:
   vmImage: ubuntu-latest
 
 variables:
-  phpVersion: '8.3'
-  artifactName: 'php-app'
-  azureServiceConnection: 'leah2-connection'
-  webAppName: 'new-otel'
+  appName: new-otel
+  azureServiceConnection: leah2-connection
 
 stages:
-# =========================
-# BUILD STAGE
-# =========================
 - stage: Build
-  displayName: Build PHP App
   jobs:
-    - job: Build
-      displayName: Build
-      steps:
-        - checkout: self
+  - job: Build
+    steps:
+    - checkout: self
 
-        - task: UsePHPVersion@0
-          displayName: 'Use PHP $(phpVersion)'
-          inputs:
-            versionSpec: '$(phpVersion)'
+    - script: |
+        php -v
+        composer --version
+      displayName: "Verify PHP & Composer"
 
-        - script: |
-            if [ -f composer.json ]; then
-              composer validate --no-check-publish
-              composer install --prefer-dist --no-progress --ignore-platform-req=ext-opentelemetry
-            else
-              echo "composer.json not found, skipping composer install"
-            fi
-          displayName: 'Install PHP dependencies'
+    - script: |
+        if [ -f composer.json ]; then
+          composer validate --no-check-publish
+          composer install --prefer-dist --no-progress --ignore-platform-req=ext-opentelemetry
+        else
+          echo "No composer.json found, skipping composer install"
+        fi
+      displayName: "Composer Install"
 
-        - task: PublishPipelineArtifact@1
-          displayName: 'Publish build artifact'
-          inputs:
-            targetPath: '$(System.DefaultWorkingDirectory)'
-            artifact: '$(artifactName)'
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(System.DefaultWorkingDirectory)'
+        artifactName: php-app
 
-# =========================
-# DEPLOY STAGE
-# =========================
 - stage: Deploy
-  displayName: Deploy to Azure App Service
   dependsOn: Build
-  condition: succeeded()
-
   jobs:
-    - deployment: DeployWeb
-      displayName: Deploy PHP App
-      environment: production
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - task: DownloadPipelineArtifact@2
-                displayName: 'Download build artifact'
-                inputs:
-                  artifact: '$(artifactName)'
-                  path: '$(Pipeline.Workspace)'
+  - job: Deploy
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        artifactName: php-app
+        downloadPath: $(System.DefaultWorkingDirectory)
 
-              - task: AzureWebApp@1
-                displayName: 'Deploy to Azure Web App'
-                inputs:
-                  azureSubscription: '$(azureServiceConnection)'
-                  appType: 'webAppLinux'
-                  appName: '$(webAppName)'
-                  package: '$(Pipeline.Workspace)/$(artifactName)'
+    - task: AzureWebApp@1
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        appName: $(appName)
+        package: $(System.DefaultWorkingDirectory)
